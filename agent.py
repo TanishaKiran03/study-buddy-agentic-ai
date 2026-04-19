@@ -424,6 +424,33 @@ class StudyBuddyAgent:
     def answer_node(self, state: CapstoneState) -> dict[str, Any]:
         name_str = f"Student name: {state['student_name']}." if state.get("student_name") else ""
         history = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in state.get("messages", [])[:-1])
+
+        if state.get("route") == "memory_only":
+            question = state["question"].lower()
+            student_name = state.get("student_name")
+            if not student_name:
+                for message in reversed(state.get("messages", [])):
+                    student_name = _extract_name(message.get("content", ""))
+                    if student_name:
+                        break
+            if "name" in question:
+                answer = f"Your name is {student_name}." if student_name else "I do not know your name yet."
+                return {"answer": answer}
+            if "previous" in question:
+                previous_questions = [m["content"] for m in state.get("messages", []) if m.get("role") == "user"]
+                previous = previous_questions[-2] if len(previous_questions) >= 2 else None
+                answer = f"Your previous question was: {previous}" if previous else "This is your first question in this session."
+                return {"answer": answer}
+            if any(word in question for word in ["hi", "hello", "hey"]):
+                greeting_name = f", {student_name}" if student_name else ""
+                return {"answer": f"Hello{greeting_name}. Ask me any B.Tech physics question."}
+            return {
+                "answer": (
+                    "I don't have information on that topic in my knowledge base. "
+                    "Please check your textbook or ask your professor."
+                )
+            }
+
         context = ""
         if state.get("retrieved"):
             context += f"\n\n--- RETRIEVED CONTEXT ---\n{state['retrieved']}"
