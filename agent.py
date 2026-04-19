@@ -367,8 +367,18 @@ class StudyBuddyAgent:
         return {"messages": messages[-6:], "student_name": student_name}
 
     def router_node(self, state: CapstoneState) -> dict[str, Any]:
-        response = self.llm.invoke(ROUTER_PROMPT.format(question=state["question"]))
-        route = response.content.strip().lower().split()[0]
+        try:
+            response = self.llm.invoke(ROUTER_PROMPT.format(question=state["question"]))
+            route = response.content.strip().lower().split()[0]
+        except Exception as exc:
+            question = state["question"].lower()
+            print(f"[router] Groq call failed or was rate-limited: {type(exc).__name__}. Using safe route fallback.")
+            if any(word in question for word in ["calculate", "time", "date", "today"]):
+                route = "tool"
+            elif any(word in question for word in ["hello", "hi", "name", "previous"]):
+                route = "memory_only"
+            else:
+                route = "retrieve"
         if route not in {"retrieve", "tool", "memory_only"}:
             route = "retrieve"
         return {"route": route, "eval_retries": state.get("eval_retries", 0)}
@@ -463,8 +473,24 @@ class StudyBuddyAgent:
             f"{context}{retry}\n\n"
             f"--- STUDENT QUESTION ---\n{state['question']}"
         )
-        response = self.llm.invoke(prompt)
-        return {"answer": response.content.strip()}
+        try:
+            response = self.llm.invoke(prompt)
+            answer = response.content.strip()
+        except Exception as exc:
+            print(f"[answer] Groq call failed or was rate-limited: {type(exc).__name__}. Using safe fallback answer.")
+            if state.get("tool_result"):
+                answer = state["tool_result"]
+            elif state.get("retrieved"):
+                answer = (
+                    "I found relevant knowledge-base context, but the Groq API call failed or was rate-limited. "
+                    "Please rerun after the rate limit resets."
+                )
+            else:
+                answer = (
+                    "I don't have information on that topic in my knowledge base. "
+                    "Please check your textbook or ask your professor."
+                )
+        return {"answer": answer}
 
     def eval_node(self, state: CapstoneState) -> dict[str, Any]:
         if state.get("route") == "memory_only":
